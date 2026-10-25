@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>HexCiv 截圖轉地圖工具</title>
+<style>
+:root{--bg:#12151a;--pn:#1b2028;--pn2:#242b35;--tx:#e6edf3;--mu:#8b98a8;--ac:#4aa3ff;--ok:#3fb950;--wa:#e3a008;--er:#f85149;--bd:#2f3844}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column;height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--pn);border-bottom:1px solid var(--bd)}
+header b{font-size:15px;white-space:nowrap}
+#st{color:var(--mu);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:flex;gap:4px;padding:4px 6px;background:var(--pn);overflow-x:auto;border-bottom:1px solid var(--bd);scrollbar-width:none;align-items:center}
+.bar::-webkit-scrollbar{display:none}
+.bar .sep{width:1px;align-self:stretch;background:var(--bd);margin:0 3px;flex:none}
+button,select,input{font:inherit;color:var(--tx)}
+button{background:var(--pn2);border:1px solid var(--bd);border-radius:8px;padding:7px 10px;min-height:38px;cursor:pointer;white-space:nowrap;flex:none}
+button.on{background:var(--ac);border-color:var(--ac);color:#04121f;font-weight:600}
+button.pri{background:var(--ok);border-color:var(--ok);color:#04150a;font-weight:600}
+button.dng{border-color:var(--er);color:var(--er)}
+button:disabled{opacity:.4}
+input[type=number],input[type=text],select{background:#0e1116;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;min-height:36px;width:84px}
+input[type=text]{width:150px}
+input[type=range]{width:100%;accent-color:var(--ac)}
+#cvw{position:relative;flex:1;min-height:160px;background:#000;overflow:hidden}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#toast{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.8);padding:6px 12px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%;text-align:center}
+#msg{padding:4px 10px;font-size:12px;color:var(--mu);background:var(--pn);min-height:26px;border-top:1px solid var(--bd)}
+#tabs{display:flex;background:var(--pn);border-top:1px solid var(--bd)}
+#tabs button{flex:1;border-radius:0;border:0;background:transparent;padding:9px 2px;min-height:40px}
+#tabs button.on{background:var(--pn2);color:var(--ac);box-shadow:inset 0 -3px var(--ac)}
+#panel{background:var(--pn);max-height:40dvh;overflow-y:auto;padding:8px 10px 12px}
+#panel.hide{display:none}
+.tab{display:none}.tab.on{display:block}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+.row label{color:var(--mu);font-size:12px}
+.hint{color:var(--mu);font-size:12px;margin:4px 0}
+.warn{color:var(--wa);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:5px}
+.chip i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid #0006}
+.sl{display:grid;grid-template-columns:96px 1fr 44px;gap:6px;align-items:center;font-size:12px;margin:2px 0}
+.sl span:last-child{text-align:right;color:var(--mu)}
+details{margin:6px 0;background:var(--pn2);border-radius:8px;padding:4px 8px}
+summary{cursor:pointer;padding:6px 0}
+h4{margin:10px 0 4px;font-size:13px;color:var(--ac)}
+.swatch{width:26px;height:26px;border-radius:5px;border:1px solid #fff5;display:inline-block;vertical-align:middle}
+textarea{width:100%;height:90px;background:#0e1116;color:var(--tx);border:1px solid var(--bd);border-radius:6px;font:11px monospace}
+ol{padding-left:18px;margin:4px 0}
+</style>
+</head>
+<body>
+<header><b>HexCiv 截圖轉地圖</b><span id="st">尚未載入圖片</span></header>
+
+<div class="bar" id="tb1">
+  <button data-m="N">一般</button><button data-m="S">衛星</button><button data-m="SPLIT">對照</button><button data-m="M">判色</button>
+  <span class="sep"></span>
+  <button id="bGrid" class="on">格線</button><button id="bFill" class="on">填色</button><button id="bCoord">座標</button>
+  <span class="sep"></span>
+  <input type="range" id="fa" min="0" max="1" step="0.05" value="0.45" style="width:90px" title="填色透明度">
+  <button id="bFit">置中</button>
+</div>
+<div class="bar" id="tb2">
+  <button data-t="pan">✋ 平移</button><button data-t="grid">⊞ 移格線</button><button data-t="paint">🖌 繪製</button><button data-t="fill">🪣 填滿</button><button data-t="spawn">📍 出生區</button><button data-t="info">ℹ 查詢</button>
+  <span class="sep"></span>
+  <button id="bUndo">↶</button><button id="bRedo">↷</button>
+</div>
+
+<div id="cvw"><canvas id="cv"></canvas><div id="toast"></div><div id="attr" style="display:none;position:absolute;right:4px;bottom:3px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:3px;pointer-events:none">© OpenStreetMap contributors｜Imagery © Esri, Maxar, Earthstar Geographics</div></div>
+<div id="msg"></div>
+
+<div id="tabs">
+  <button data-p="img" class="on">① 圖片</button><button data-p="grid">② 格線</button><button data-p="cls">③ 分類</button><button data-p="edit">④ 編輯</button><button data-p="exp">⑤ 匯出</button>
+</div>
+
+<section id="panel">
+  <!-- ① 圖片 -->
+  <div class="tab on" id="p-img">
+    <h4>方法 A：輸入座標，自動抓圖（建議）</h4>
+    <div class="row"><label>中心座標</label><input type="text" id="iLL" placeholder="24.7432, 121.7503" style="width:230px"></div>
+    <div class="hint">在 Google 地圖長按要當中心的位置，畫面上方會出現座標，點一下複製後貼在這裡（小數或度分秒都可以）。範圍依「② 格線」的欄數×列數×每格公里自動決定（預設 40×40 公里）。</div>
+    <div class="row"><label>清晰度</label>
+      <select id="sZoom" style="width:auto"><option value="0">標準（每格約 29 像素）</option><option value="1">高清（約 58 像素，圖磚多 4 倍）</option></select>
+      <button class="pri" id="bFetch">抓取底圖</button></div>
+    <div class="hint" id="fetchInfo"></div>
+    <h4>方法 B：上傳截圖</h4>
+    <div class="row"><label>一般地圖截圖</label><input type="file" id="fN" accept="image/*"></div>
+    <div class="row"><label>衛星截圖</label><input type="file" id="fS" accept="image/*"></div>
+    <div class="hint" id="imgInfo">兩張圖請用<b>同一個位置、同一個縮放</b>截圖，工具會把它們疊在一起對照。只有一張也可以。上傳截圖需要到「② 格線」自己校準比例。</div>
+    <h4>使用步驟</h4>
+    <ol class="hint">
+      <li>方法 A：貼上中心座標，按「抓取底圖」，格線會自動對準中心與公里。</li>
+      <li>③ 分類：按「自動分類」，再看「對照」模式檢查。</li>
+      <li>④ 編輯：用畫筆修正水域、森林、山地、城鎮、道路與出生區。</li>
+      <li>⑤ 匯出：下載 JSON，放進遊戲的 maps 資料夾。</li>
+    </ol>
+    <div class="hint">底圖來源：© OpenStreetMap contributors；衛星影像 © Esri, Maxar, Earthstar Geographics。圖片只在你的瀏覽器內處理，不會上傳。再點一次分頁標籤可收合面板，讓地圖變大。</div>
+  </div>
+
+  <!-- ② 格線 -->
+  <div class="tab" id="p-grid">
+    <div class="row">
+      <label>欄數</label><input type="number" id="iCols" min="2" max="120" value="40">
+      <label>列數</label><input type="number" id="iRows" min="2" max="120" value="40">
+      <label>每格(公里)</label><input type="number" id="iKm" min="0.1" step="0.1" value="1">
+    </div>
+    <h4>校準比例（二選一）</h4>
+    <div class="row">
+      <button id="bCalib">A. 點比例尺兩端</button>
+      <span id="calInfo" class="hint">在圖上點比例尺線的左右兩端，再輸入它代表的公里數</span>
+    </div>
+    <div class="row" id="calRow" style="display:none">
+      <label>兩點相距</label><b id="calPx">0</b><label>像素 = 實際</label><input type="number" id="calKm" step="0.1" value="5"><label>公里</label>
+      <button class="pri" id="calApply">套用</button>
+    </div>
+    <div class="row">
+      <label>B. 整張圖寬度約</label><input type="number" id="iWidthKm" step="1" placeholder="公里"><button id="bWidthKm">套用</button>
+      <label>目前每公里</label><input type="number" id="iPpk" step="0.1"><label>像素</label>
+    </div>
+    <h4>位置微調</h4>
+    <div class="row">
+      <button id="bCenter">格線置於圖中央</button>
+      <button data-nudge="-1,0">←</button><button data-nudge="0,-1">↑</button><button data-nudge="0,1">↓</button><button data-nudge="1,0">→</button>
+      <button data-scale="0.99">縮小 1%</button><button data-scale="1.01">放大 1%</button>
+    </div>
+    <div class="hint">也可以切到工具列的「⊞ 移格線」，直接用手指拖曳整個格線。格線與公里不一致時，地圖上的距離會失真，請花一點時間對準。</div>
+    <div class="hint" id="gridInfo"></div>
+  </div>
+
+  <!-- ③ 分類 -->
+  <div class="tab" id="p-cls">
+    <div class="row">
+      <button class="pri" id="bAuto">自動分類</button>
+      <label><input type="checkbox" id="cKeepSpawn" checked> 保留出生區</label>
+      <label><input type="checkbox" id="cRoad" checked> 辨識道路</label>
+    </div>
+    <div class="hint">自動分類會覆蓋所有格子（可按 ↶ 復原）。「判色」模式能看到工具把每個像素判成什麼顏色：藍=水、綠=綠地、橘=道路、紫=市區、白=白色道路線。</div>
+    <div class="hint warn" id="clsWarn"></div>
+    <details><summary>調整門檻（結果不對時才需要）</summary><div id="sliders"></div>
+      <label><input type="checkbox" id="cUseN" checked> 用一般圖判斷市區（顏色較深的區域與道路密度）</label><br>
+      <label><input type="checkbox" id="cUseS" checked> 用衛星判斷市區（灰白、紋理多）</label><br>
+      <label><input type="checkbox" id="cMtn"> 用衛星判斷山地（森林且起伏明顯，實驗性）</label>
+      <div class="row"><button id="bResetP">門檻恢復預設</button></div>
+    </details>
+    <details><summary>教我顏色（Google 配色和預設不同時使用）</summary>
+      <div class="hint">按「吸色」後點圖上任一點，再選它屬於哪一類。教過的顏色優先於預設規則。</div>
+      <div class="row"><button id="bPick">🎯 吸色</button><span class="swatch" id="pkSw"></span><span id="pkTx" class="hint"></span></div>
+      <div class="row" id="pkBtns" style="display:none">
+        <button data-k="1">水</button><button data-k="2">綠地</button><button data-k="3">道路</button><button data-k="4">市區</button><button data-k="0">一般陸地</button>
+      </div>
+      <div class="row"><label>容許色差</label><input type="number" id="iTol" value="16" min="2" max="60"></div>
+      <div id="taught" class="row"></div>
+    </details>
+    <div class="hint">山地很難只靠截圖判斷，建議在「對照」模式看衛星圖，自己用畫筆補。</div>
+  </div>
+
+  <!-- ④ 編輯 -->
+  <div class="tab" id="p-edit">
+    <h4>地形</h4>
+    <div class="row" id="palT"></div>
+    <h4>道路</h4>
+    <div class="row" id="palO"></div>
+    <div class="row"><label>筆刷大小</label>
+      <button data-br="0" class="on">1 格</button><button data-br="1">7 格</button><button data-br="2">19 格</button>
+    </div>
+    <div class="hint">畫在水上的道路會自動變成橋。拖曳可連續塗；雙指縮放與平移。</div>
+    <h4>出生區（📍 工具）</h4>
+    <div class="row" id="palS"></div>
+    <div class="row">
+      <label>車輛區 前後</label><input type="number" id="iBand" value="8" min="1" max="30" style="width:60px">
+      <label>步兵 前後</label><input type="number" id="iInf" value="13" min="1" max="40" style="width:60px">
+      <button id="bAutoSpawn">自動產生出生區</button><button class="dng" id="bClrSpawn">清空</button>
+    </div>
+    <div class="hint">自動：藍軍在北側、紅軍在南側；車輛只能在草地／城鎮，步兵可含森林（與先前地圖相同）。</div>
+    <div class="row"><label><input type="checkbox" id="cShowSp" checked> 顯示出生區</label></div>
+  </div>
+
+  <!-- ⑤ 匯出 -->
+  <div class="tab" id="p-exp">
+    <div id="stats" class="hint"></div>
+    <div id="warns" class="warn"></div>
+    <div class="row"><label>檔名</label><input type="text" id="iName" value="my_map"></div>
+    <div class="row">
+      <button class="pri" id="bDl">下載 JSON</button><button id="bCopy">複製 JSON</button><button id="bPng">下載預覽圖</button>
+    </div>
+    <div class="row"><label>匯入既有 JSON 繼續修改</label><input type="file" id="fJ" accept=".json,application/json"></div>
+    <div class="row"><button class="dng" id="bReset">全部重來</button></div>
+    <textarea id="jsonOut" style="display:none" readonly></textarea>
+    <div class="hint">工具會自動記住你編輯到哪裡（地形、出生區、格線設定）；圖片需要重新載入。</div>
+  </div>
+</section>
+
+<script>
+'use strict';
+const SQ3=Math.sqrt(3), ROW_K=0.8660254037844386;
+const $=id=>document.getElementById(id);
+const TER={
+  GRASSLAND:{n:'草地',c:'#8fd14f'},
+  FOREST:{n:'森林',c:'#1f8a3a'},
+  MOUNTAIN:{n:'山地',c:'#a0642a'},
+  WATER:{n:'水域',c:'#2f6fe0'},
+  TOWN:{n:'城鎮',c:'#c25bd6'}
+};
+const GRP={BLUE:{n:'藍軍車輛',c:'#4aa3ff',inf:false},RED:{n:'紅軍車輛',c:'#ff5a5a',inf:false},BLUE_INFANTRY:{n:'藍軍步兵',c:'#4aa3ff',inf:true},RED_INFANTRY:{n:'紅軍步兵',c:'#ff5a5a',inf:true}};
+const DEFP={water:.5,green:.5,urban:.5,dens:.10,road:.08,forestV:.42,sTownStd:.12,sTownSat:.30,mtnStd:.16};
+const PCFG=[
+ ['water','水域占比 ≥',.2,.9,.05],['green','綠地占比 ≥（無衛星時=森林）',.2,.9,.05],['urban','市區底色占比 ≥',.2,.9,.05],
+ ['dens','白色道路線占比 ≥（市區）',.03,.4,.01],['road','道路像素占比 ≥',.02,.3,.01],
+ ['forestV','衛星森林亮度 ≤',.2,.7,.02],['sTownStd','衛星市區紋理 ≥',.04,.3,.01],['sTownSat','衛星市區飽和度 ≤',.1,.6,.02],['mtnStd','衛星山地起伏 ≥',.06,.4,.01]
+];
+
+const S={
+  N:null,S:null,W:0,H:0,
+  cols:40,rows:40,km:1,ppk:25,ox:0,oy:0,
+  cells:[],spawn:{BLUE:new Set(),RED:new Set(),BLUE_INFANTRY:new Set(),RED_INFANTRY:new Set()},
+  v:{s:1,tx:0,ty:0},mode:'N',split:.5,
+  tool:'pan',brush:'GRASSLAND',brushR:0,grp:'BLUE',
+  showGrid:true,showFill:true,fillA:.45,showCoord:false,showSp:true,
+  cal:{p1:null,p2:null},pick:null,taught:[],P:Object.assign({},DEFP),
+  useN:true,useS:true,useMtn:false,tol:16
+};
+let AN=null, maskCv=null, hist=[], redo=[];
+
+/* ───────── 基本工具 ───────── */
+const gC=(c,r)=>{const d=S.km*S.ppk;return [S.ox+d*(c+((r&1)?.5:0)),S.oy+d*ROW_K*r];};
+function nbrs(c,r){const d=(r&1)?[[1,0],[-1,0],[0,-1],[1,-1],[0,1],[1,1]]:[[1,0],[-1,0],[-1,-1],[0,-1],[-1,1],[0,1]];const o=[];for(const [a,b] of d){const cc=c+a,rr=r+b;if(cc>=0&&cc<S.cols&&rr>=0&&rr<S.rows)o.push(rr*S.cols+cc);}return o;}
+function newCells(){S.cells=Array.from({length:S.cols*S.rows},()=>({t:'GRASSLAND',o:null}));}
+function toast(m){const t=$('toast');t.textContent=m;t.style.opacity=1;clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.opacity=0,2200);}
+function msg(m){$('msg').textContent=m;}
+function fixCell(c){if(c.o){if(c.t==='WATER')c.o='BRIDGE';else if(c.o==='BRIDGE')c.o='ROAD';}}
+function snap(){return {cells:S.cells.map(c=>({t:c.t,o:c.o})),spawn:Object.fromEntries(Object.keys(S.spawn).map(k=>[k,[...S.spawn[k]]])),cols:S.cols,rows:S.rows};}
+function restore(s){S.cols=s.cols;S.rows=s.rows;S.cells=s.cells.map(c=>({t:c.t,o:c.o}));for(const k in S.spawn)S.spawn[k]=new Set(s.spawn[k]);$('iCols').value=S.cols;$('iRows').value=S.rows;}
+function pushHist(){hist.push(snap());if(hist.length>60)hist.shift();redo=[];updUndo();}
+function undo(){if(!hist.length)return;redo.push(snap());restore(hist.pop());updUndo();afterEdit();}
+function redoF(){if(!redo.length)return;hist.push(snap());restore(redo.pop());updUndo();afterEdit();}
+function updUndo(){$('bUndo').disabled=!hist.length;$('bRedo').disabled=!redo.length;}
+function afterEdit(){draw();saveLS();updStats();}
+
+/* ───────── 圖片載入 ───────── */
+function loadImg(file,which){
+  if(!file)return;
+  const im=new Image();const url=URL.createObjectURL(file);
+  im.onload=()=>{
+    const oldW=S.W;
+    S[which]=im;
+    const base=S.N||S.S;
+    const nw=base.naturalWidth,nh=base.naturalHeight;
+    if(oldW&&(nw!==S.W)){const f=nw/S.W;S.ox*=f;S.oy*=f;S.ppk*=f;}
+    S.W=nw;S.H=nh;
+    if(!oldW&&S.savedW!==nw){autoScale();centerGrid();}
+    buildAnalysis();fitView();updImgInfo();draw();
+    if(S.N&&S.S&&S.mode==='N'){setMode('SPLIT');}
+    else if(which==='S'&&!S.N)setMode('S');
+    toast((which==='N'?'一般':'衛星')+'圖已載入');
+    URL.revokeObjectURL(url);
+  };
+  im.onerror=()=>toast('圖片無法開啟');
+  im.src=url;
+}
+function updImgInfo(){
+  let t=[];
+  if(S.N)t.push(`一般 ${S.N.naturalWidth}×${S.N.naturalHeight}`);
+  if(S.S)t.push(`衛星 ${S.S.naturalWidth}×${S.S.naturalHeight}`);
+  let w='';
+  if(S.N&&S.S&&Math.abs(S.N.naturalWidth/S.N.naturalHeight-S.S.naturalWidth/S.S.naturalHeight)>0.01)w=' ⚠ 兩張圖長寬比不同，疊合會有偏差，請用同一支手機、同樣的截圖範圍。';
+  $('imgInfo').innerHTML=(t.join('　')||'')+(w?`<span class="warn">${w}</span>`:'')+'<br>兩張圖請用同一個位置、同一個縮放截圖。對照模式下，拖曳中間的白色圓形把手可移動分隔線。';
+  $('st').textContent=t.join(' / ')||'尚未載入圖片';
+}
+function autoScale(){S.ppk=Math.max(2,0.94*S.W/(S.cols*S.km+0.5));syncGridUI();}
+
+/* ───────── 像素分類 ───────── */
+let _h=0,_s=0,_v=0;
+function hsv(r,g,b){const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360;}_h=h;_s=mx?d/mx:0;_v=mx/255;}
+function buildAnalysis(){
+  maskCv=null;
+  if(!S.W){AN=null;return;}
+  const sc=Math.min(1,2400/Math.max(S.W,S.H)),w=Math.round(S.W*sc),h=Math.round(S.H*sc);
+  const mk=im=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(im,0,0,w,h);return x.getImageData(0,0,w,h).data;};
+  AN={sc,w,h,N:S.N?mk(S.N):null,S:S.S?mk(S.S):null,base:.95};
+  if(AN.N){ // 求一般地圖的「陸地底色」亮度
+    const bins=new Uint32Array(256);const D=AN.N;
+    for(let i=0;i<D.length;i+=16){hsv(D[i],D[i+1],D[i+2]);if(_s<=.08&&_v<.985&&_v>.6)bins[Math.round(_v*255)]++;}
+    let bi=242,bm=0;for(let i=0;i<256;i++)if(bins[i]>bm){bm=bins[i];bi=i;}
+    AN.base=bi/255;
+  }
+}
+// 0其他 1水 2綠 3道路 4市區底色 5白線
+function classPx(r,g,b){
+  const T2=S.tol*S.tol;
+  for(const t of S.taught){const a=r-t.r,c=g-t.g,d=b-t.b;if(a*a+c*c+d*d<=T2)return t.k;}
+  hsv(r,g,b);const h=_h,s=_s,v=_v;
+  if(v>=.985&&s<=.03)return 5;
+  if(((h>=340||h<=58)&&s>=.30&&v>=.80)||(h>58&&h<=72&&s>=.20&&v>=.90))return 3;
+  if((h>=290||h<20)&&s>=.04&&s<=.20&&v>=.85)return 4;
+  if(h>=172&&h<=240&&s>=.10&&s<=.8&&v>=.5)return 1;
+  if(h>=70&&h<=165&&s>=.10&&s<=.75&&v>=.45)return 2;
+  if(s<=.14&&v>=AN.base-.09&&v<=AN.base-.012)return 4;
+  return 0;
+}
+function cellStats(i){
+  if(!AN)return null;
+  const c=i%S.cols,r=(i/S.cols)|0,[cx,cy]=gC(c,r),sc=AN.sc,rr=.46*S.km*S.ppk*sc,X=cx*sc,Y=cy*sc;
+  const x0=Math.max(0,Math.floor(X-rr)),x1=Math.min(AN.w-1,Math.ceil(X+rr)),y0=Math.max(0,Math.floor(Y-rr)),y1=Math.min(AN.h-1,Math.ceil(Y+rr));
+  const cnt=[0,0,0,0,0,0];let tot=0,sr=0,sg=0,sb=0,sl=0,sl2=0,sw=0;
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const dx=x-X,dy=y-Y;if(dx*dx+dy*dy>rr*rr)continue;
+    const p=(y*AN.w+x)*4;
+    if(AN.N)cnt[classPx(AN.N[p],AN.N[p+1],AN.N[p+2])]++;
+    if(AN.S){const R=AN.S[p],G=AN.S[p+1],B=AN.S[p+2],l=(.299*R+.587*G+.114*B)/255;sr+=R;sg+=G;sb+=B;sl+=l;sl2+=l*l;if(B>=R+10&&B>=G-8&&l<.6)sw++;}
+    tot++;
+  }
+  const full=Math.PI*rr*rr;
+  const o={tot,cov:full>0?tot/full:0,rr};
+  if(!tot)return o;
+  if(AN.N)o.n={w:cnt[1]/tot,g:cnt[2]/tot,rd:cnt[3]/tot,u:cnt[4]/tot,wl:cnt[5]/tot};
+  if(AN.S){const mr=sr/tot,mg=sg/tot,mb=sb/tot;hsv(mr,mg,mb);const m=sl/tot;o.s={v:_v,sat:_s,gd:(mg-Math.max(mr,mb))/255,std:Math.sqrt(Math.max(0,sl2/tot-m*m)),wat:sw/tot,lum:m};}
+  return o;
+}
+function decide(st){
+  const P=S.P;let t='GRASSLAND',o=null;
+  if(!st||!st.tot)return {t,o,miss:true};
+  const water=st.n?st.n.w>=P.water:(st.s?st.s.wat>=P.water:false);
+  if(water)t='WATER';
+  else{
+    let town=false;
+    if(st.n&&S.useN)town=(st.n.u>=P.urban)||(st.n.wl>=P.dens);
+    if(st.s&&S.useS)town=town||(st.s.std>=P.sTownStd&&st.s.sat<=P.sTownSat&&st.s.v>.3);
+    if(town)t='TOWN';
+    else{
+      let forest=false;
+      if(st.s)forest=st.s.gd>0.005&&st.s.v<=P.forestV;
+      else if(st.n)forest=st.n.g>=P.green;
+      if(forest){t='FOREST';if(S.useMtn&&st.s&&st.s.std>=P.mtnStd)t='MOUNTAIN';}
+    }
+  }
+  if($('cRoad').checked&&st.n){const th=t==='WATER'?P.road*1.8:P.road;if(st.n.rd>=th)o=(t==='WATER')?'BRIDGE':'ROAD';}
+  return {t,o,miss:st.cov<.5};
+}
+function autoClassify(){
+  if(!AN){toast('請先載入圖片');return;}
+  pushHist();
+  let miss=0,small=false;
+  if(S.km*S.ppk*AN.sc<8)small=true;
+  for(let i=0;i<S.cells.length;i++){
+    const d=decide(cellStats(i));if(d.miss)miss++;
+    S.cells[i].t=d.t;S.cells[i].o=d.o;fixCell(S.cells[i]);
+  }
+  if(!$('cKeepSpawn').checked)for(const k in S.spawn)S.spawn[k].clear();
+  let w='';
+  if(miss)w+=`有 ${miss} 格大半在圖片外，已暫設為草地，請調整格線或手動修改。`;
+  if(small)w+=' 格子太小（不到 8 像素），判斷會很不準，建議用更高解析度的截圖。';
+  $('clsWarn').textContent=w;
+  afterEdit();toast('分類完成，請切到「對照」檢查');
+}
+function buildMask(){
+  if(!AN||!AN.N)return null;
+  const c=document.createElement('canvas');c.width=AN.w;c.height=AN.h;const x=c.getContext('2d');const id=x.createImageData(AN.w,AN.h);
+  const col=[[40,40,40],[60,130,240],[70,190,90],[255,150,30],[190,90,210],[255,255,255]];
+  const D=AN.N,O=id.data;
+  for(let i=0;i<D.length;i+=4){const k=classPx(D[i],D[i+1],D[i+2]);const q=col[k];O[i]=q[0];O[i+1]=q[1];O[i+2]=q[2];O[i+3]=255;}
+  x.putImageData(id,0,0);return c;
+}
+
+/* ───────── 繪圖 ───────── */
+const cv=$('cv'),ctx=cv.getContext('2d');let dpr=1;
+function resize(){const r=cv.getBoundingClientRect();dpr=window.devicePixelRatio||1;cv.width=Math.max(1,Math.round(r.width*dpr));cv.height=Math.max(1,Math.round(r.height*dpr));draw();}
+function bounds(){
+  if(S.W)return [0,0,S.W,S.H];
+  const d=S.km*S.ppk;return [S.ox-d,S.oy-d,d*(S.cols+1),d*ROW_K*S.rows+2*d];
+}
+function fitView(){
+  const r=cv.getBoundingClientRect();const [x,y,w,h]=bounds();if(!w||!r.width)return;
+  const s=Math.min(r.width/w,r.height/h);S.v.s=s;S.v.tx=(r.width-w*s)/2-x*s;S.v.ty=(r.height-h*s)/2-y*s;draw();
+}
+function hexPath(x,y,s){ctx.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k+30);const px=x+s*Math.cos(a),py=y+s*Math.sin(a);k?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+function draw(){
+  const r=cv.getBoundingClientRect();
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#0b0d10';ctx.fillRect(0,0,r.width,r.height);
+  const v=S.v;ctx.save();ctx.translate(v.tx,v.ty);ctx.scale(v.s,v.s);
+  // 底圖
+  const N=S.N||S.S,Sa=S.S||S.N;
+  if(S.W){
+    ctx.imageSmoothingEnabled=v.s<2;
+    if(S.mode==='N'&&N)ctx.drawImage(N,0,0,S.W,S.H);
+    else if(S.mode==='S'&&Sa)ctx.drawImage(Sa,0,0,S.W,S.H);
+    else if(S.mode==='SPLIT'){
+      const sx=S.split*S.W;
+      ctx.save();ctx.beginPath();ctx.rect(0,0,sx,S.H);ctx.clip();if(N)ctx.drawImage(N,0,0,S.W,S.H);ctx.restore();
+      ctx.save();ctx.beginPath();ctx.rect(sx,0,S.W-sx,S.H);ctx.clip();if(Sa)ctx.drawImage(Sa,0,0,S.W,S.H);ctx.restore();
+    }else if(S.mode==='M'){
+      if(!maskCv)maskCv=buildMask();
+      if(maskCv)ctx.drawImage(maskCv,0,0,S.W,S.H);else if(N)ctx.drawImage(N,0,0,S.W,S.H);
+    }
+  }
+  // 格子
+  const d=S.km*S.ppk,sz=d/SQ3;
+  const vx0=-v.tx/v.s-d,vy0=-v.ty/v.s-d,vx1=(r.width-v.tx)/v.s+d,vy1=(r.height-v.ty)/v.s+d;
+  ctx.lineJoin='round';
+  const fillOn=S.showFill,gridOn=S.showGrid;
+  if(gridOn)ctx.lineWidth=1/v.s;
+  ctx.strokeStyle='rgba(255,255,255,.55)';
+  for(let rr=0;rr<S.rows;rr++){
+    for(let c=0;c<S.cols;c++){
+      const [x,y]=gC(c,rr);if(x<vx0||x>vx1||y<vy0||y>vy1)continue;
+      const cell=S.cells[rr*S.cols+c];if(!cell)continue;
+      if(fillOn){ctx.globalAlpha=S.fillA;ctx.fillStyle=TER[cell.t].c;hexPath(x,y,sz);ctx.fill();ctx.globalAlpha=1;}
+      if(gridOn){hexPath(x,y,sz);ctx.stroke();}
+    }
+  }
+  // 道路
+  for(let rr=0;rr<S.rows;rr++)for(let c=0;c<S.cols;c++){
+    const i=rr*S.cols+c,cell=S.cells[i];if(!cell||!cell.o)continue;
+    const [x,y]=gC(c,rr);if(x<vx0||x>vx1||y<vy0||y>vy1)continue;
+    const br=cell.o==='BRIDGE';
+    ctx.lineCap='round';
+    const links=[];for(const j of nbrs(c,rr))if(S.cells[j].o){const cj=j%S.cols,rj=(j/S.cols)|0;links.push(gC(cj,rj));}
+    for(const pass of [0,1]){
+      ctx.strokeStyle=pass?(br?'#fff2cc':'#ffb020'):'rgba(0,0,0,.6)';ctx.lineWidth=d*(pass?.16:.26);
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y);ctx.stroke();
+      for(const [lx,ly] of links){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo((x+lx)/2,(y+ly)/2);ctx.stroke();}
+    }
+  }
+  // 出生區
+  if(S.showSp){
+    for(const k in S.spawn){
+      const g=GRP[k];ctx.strokeStyle=g.c;ctx.fillStyle=g.c;
+      for(const i of S.spawn[k]){
+        const c=i%S.cols,rr=(i/S.cols)|0,[x,y]=gC(c,rr);if(x<vx0||x>vx1||y<vy0||y>vy1)continue;
+        if(g.inf){ctx.lineWidth=Math.max(1/v.s,d*.05);ctx.beginPath();ctx.arc(x,y,d*.34,0,7);ctx.stroke();}
+        else{ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(x,y,d*.14,0,7);ctx.fill();ctx.globalAlpha=1;}
+      }
+    }
+  }
+  // 座標
+  if(S.showCoord&&d*v.s>=30){
+    ctx.font=`${d*.26}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=d*.06;
+    for(let rr=0;rr<S.rows;rr++)for(let c=0;c<S.cols;c++){
+      const [x,y]=gC(c,rr);if(x<vx0||x>vx1||y<vy0||y>vy1)continue;
+      const t=(c-(rr>>1))+','+rr;ctx.strokeStyle='rgba(0,0,0,.8)';ctx.strokeText(t,x,y+d*.3);ctx.fillStyle='#fff';ctx.fillText(t,x,y+d*.3);
+    }
+  }
+  // 校準點
+  if(S.cal.p1){
+    const ps=[S.cal.p1,S.cal.p2].filter(Boolean);
+    ctx.lineWidth=2/v.s;ctx.strokeStyle='#ff0';
+    if(ps.length===2){ctx.beginPath();ctx.moveTo(ps[0][0],ps[0][1]);ctx.lineTo(ps[1][0],ps[1][1]);ctx.stroke();}
+    for(const p of ps){ctx.beginPath();ctx.arc(p[0],p[1],8/v.s,0,7);ctx.stroke();ctx.beginPath();ctx.moveTo(p[0]-14/v.s,p[1]);ctx.lineTo(p[0]+14/v.s,p[1]);ctx.moveTo(p[0],p[1]-14/v.s);ctx.lineTo(p[0],p[1]+14/v.s);ctx.stroke();}
+  }
+  ctx.restore();
+  // 對照分隔線
+  if(S.mode==='SPLIT'&&S.W){
+    const sx=S.split*S.W*v.s+v.tx;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,r.height);ctx.stroke();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(sx,r.height/2,16,0,7);ctx.fill();ctx.fillStyle='#000';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('↔',sx,r.height/2);
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(sx-52,6,48,20);ctx.fillRect(sx+4,6,48,20);ctx.fillStyle='#fff';ctx.font='12px sans-serif';ctx.fillText('一般',sx-28,16);ctx.fillText('衛星',sx+28,16);
+  }
+}
+
+/* ───────── 觸控 / 滑鼠 ───────── */
+const ptrs=new Map();let act=null,pinch=null;
+const toImg=(sx,sy)=>[(sx-S.v.tx)/S.v.s,(sy-S.v.ty)/S.v.s];
+function hit(ix,iy){
+  const d=S.km*S.ppk;const r0=Math.round((iy-S.oy)/(d*ROW_K));let best=-1,bd=1e18;
+  for(let r=r0-1;r<=r0+1;r++){if(r<0||r>=S.rows)continue;const c0=Math.round((ix-S.ox)/d-((r&1)?.5:0));
+    for(let c=c0-1;c<=c0+1;c++){if(c<0||c>=S.cols)continue;const [x,y]=gC(c,r);const dd=(x-ix)**2+(y-iy)**2;if(dd<bd){bd=dd;best=r*S.cols+c;}}}
+  return bd<=(d*.62)**2?best:-1;
+}
+function pos(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
+cv.addEventListener('pointerdown',e=>{
+  try{cv.setPointerCapture(e.pointerId);}catch(_){}const [x,y]=pos(e);ptrs.set(e.pointerId,{x,y});
+  if(ptrs.size===2){act=null;const [a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2,v:{...S.v}};return;}
+  if(ptrs.size>2)return;
+  // 對照分隔線
+  if(S.mode==='SPLIT'&&S.W){const sx=S.split*S.W*S.v.s+S.v.tx;const hh=cv.getBoundingClientRect().height/2;if(Math.abs(x-sx)<26&&Math.abs(y-hh)<48){act={k:'split'};return;}}
+  act={k:S.tool,sx:x,sy:y,moved:false,started:false,last:null,ox:S.ox,oy:S.oy,tx:S.v.tx,ty:S.v.ty};
+});
+cv.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId))return;const [x,y]=pos(e);ptrs.set(e.pointerId,{x,y});
+  if(pinch&&ptrs.size>=2){const [a,b]=[...ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+    const ns=Math.min(60,Math.max(.05,pinch.v.s*d/pinch.d));const ix=(pinch.mx-pinch.v.tx)/pinch.v.s,iy=(pinch.my-pinch.v.ty)/pinch.v.s;
+    S.v.s=ns;S.v.tx=mx-ix*ns;S.v.ty=my-iy*ns;draw();return;}
+  if(!act)return;
+  if(act.k==='split'){S.split=Math.min(.98,Math.max(.02,((x-S.v.tx)/S.v.s)/S.W));draw();return;}
+  const dx=x-act.sx,dy=y-act.sy;
+  if(!act.moved&&Math.hypot(dx,dy)>5)act.moved=true;
+  if(!act.moved)return;
+  const k=act.k;
+  if(k==='pan'||k==='calib'||k==='pick'||k==='info'){S.v.tx=act.tx+dx;S.v.ty=act.ty+dy;draw();}
+  else if(k==='grid'){S.ox=act.ox+dx/S.v.s;S.oy=act.oy+dy/S.v.s;draw();}
+  else if(k==='paint'||k==='spawn'){
+    if(!act.started){pushHist();act.started=true;const [ix,iy]=toImg(act.sx,act.sy);strokeAt(hit(ix,iy));}
+    const [ix,iy]=toImg(x,y);strokeAt(hit(ix,iy));
+  }else if(k==='fill'){S.v.tx=act.tx+dx;S.v.ty=act.ty+dy;draw();}
+});
+function endPtr(e){
+  const had=ptrs.has(e.pointerId);ptrs.delete(e.pointerId);
+  if(ptrs.size<2)pinch=null;
+  if(!had)return;
+  if(ptrs.size===0&&act){
+    const a=act;act=null;
+    if(a.k==='split')return;
+    if(a.moved){if(a.k==='grid'){afterEdit();}else if(a.started){afterEdit();}return;}
+    // 點一下
+    const [ix,iy]=toImg(a.sx,a.sy);const i=hit(ix,iy);
+    if(a.k==='paint'||a.k==='spawn'){if(i>=0){pushHist();strokeAt(i);afterEdit();}}
+    else if(a.k==='fill'){if(i>=0)floodFill(i);}
+    else if(a.k==='info'){showInfo(i);}
+    else if(a.k==='calib'){calClick(ix,iy);}
+    else if(a.k==='pick'){pickColor(ix,iy);}
+  }
+}
+cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endPtr);
+cv.addEventListener('wheel',e=>{e.preventDefault();const [x,y]=pos(e);const f=Math.exp(-e.deltaY*.0015);const ns=Math.min(60,Math.max(.05,S.v.s*f));const ix=(x-S.v.tx)/S.v.s,iy=(y-S.v.ty)/S.v.s;S.v.s=ns;S.v.tx=x-ix*ns;S.v.ty=y-iy*ns;draw();},{passive:false});
+
+/* ───────── 編輯動作 ───────── */
+function area(i){
+  if(i<0)return [];let set=new Set([i]),fr=[i];
+  for(let k=0;k<S.brushR;k++){const nx=[];for(const a of fr)for(const b of nbrs(a%S.cols,(a/S.cols)|0))if(!set.has(b)){set.add(b);nx.push(b);}fr=nx;}
+  return [...set];
+}
+let lastStroke=-2;
+function strokeAt(i){
+  if(i<0)return;
+  // 兩次取樣之間若跨格，補中間格（簡單做法：直接處理目前格）
+  for(const j of area(i)){
+    if(S.tool==='spawn'){
+      if(S.grp==='ERASE'){for(const k in S.spawn)S.spawn[k].delete(j);}
+      else S.spawn[S.grp].add(j);
+    }else{
+      const c=S.cells[j],b=S.brush;
+      if(TER[b])c.t=b;else if(b==='ROAD')c.o='ROAD';else if(b==='CLR')c.o=null;
+      fixCell(c);
+    }
+  }
+  draw();
+}
+function floodFill(i){
+  const b=S.brush;if(!TER[b]){toast('填滿只能用地形（草地/森林…）');return;}
+  const from=S.cells[i].t;if(from===b)return;
+  pushHist();const q=[i];const seen=new Set([i]);
+  while(q.length){const a=q.pop();S.cells[a].t=b;fixCell(S.cells[a]);for(const n of nbrs(a%S.cols,(a/S.cols)|0))if(!seen.has(n)&&S.cells[n].t===from){seen.add(n);q.push(n);}}
+  afterEdit();toast(`已填滿 ${seen.size} 格`);
+}
+function showInfo(i){
+  if(i<0){msg('點到格線外面了');return;}
+  const c=i%S.cols,r=(i/S.cols)|0,q=c-(r>>1),cell=S.cells[i];
+  let t=`格 q=${q}, r=${r}（欄${c}列${r}）｜目前：${TER[cell.t].n}${cell.o?'＋'+(cell.o==='BRIDGE'?'橋':'道路'):''}`;
+  const st=cellStats(i);
+  if(st&&st.n)t+=`｜一般圖 水${pc(st.n.w)} 綠${pc(st.n.g)} 路${pc(st.n.rd)} 市底${pc(st.n.u)} 白線${pc(st.n.wl)}`;
+  if(st&&st.s)t+=`｜衛星 亮${st.s.v.toFixed(2)} 綠度${st.s.gd.toFixed(3)} 紋理${st.s.std.toFixed(3)} 飽和${st.s.sat.toFixed(2)}`;
+  msg(t);
+}
+const pc=x=>Math.round(x*100)+'%';
+function calClick(ix,iy){
+  if(!S.cal.p1||S.cal.p2){S.cal={p1:[ix,iy],p2:null};$('calRow').style.display='none';msg('已點第一點，請點比例尺另一端');}
+  else{S.cal.p2=[ix,iy];const px=Math.hypot(S.cal.p2[0]-S.cal.p1[0],S.cal.p2[1]-S.cal.p1[1]);$('calPx').textContent=px.toFixed(1);$('calRow').style.display='flex';msg('輸入這兩點代表的公里數後按「套用」');}
+  draw();
+}
+function pickColor(ix,iy){
+  if(!AN)return;const sc=AN.sc;const x=Math.round(ix*sc),y=Math.round(iy*sc);if(x<0||y<0||x>=AN.w||y>=AN.h)return;
+  const D=AN.N||AN.S;let r=0,g=0,b=0,n=0;
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=AN.w||yy>=AN.h)continue;const p=(yy*AN.w+xx)*4;r+=D[p];g+=D[p+1];b+=D[p+2];n++;}
+  S.pick={r:Math.round(r/n),g:Math.round(g/n),b:Math.round(b/n)};
+  $('pkSw').style.background=`rgb(${S.pick.r},${S.pick.g},${S.pick.b})`;$('pkTx').textContent=`RGB ${S.pick.r},${S.pick.g},${S.pick.b} 屬於哪一類？`;$('pkBtns').style.display='flex';
+}
+function renderTaught(){
+  const nm={0:'陸地',1:'水',2:'綠地',3:'道路',4:'市區'};
+  $('taught').innerHTML='';
+  S.taught.forEach((t,i)=>{const b=document.createElement('button');b.innerHTML=`<span class="swatch" style="width:14px;height:14px;background:rgb(${t.r},${t.g},${t.b})"></span> ${nm[t.k]} ✕`;b.onclick=()=>{S.taught.splice(i,1);maskCv=null;renderTaught();draw();saveLS();};$('taught').appendChild(b);});
+}
+
+/* ───────── 格線設定 ───────── */
+function syncGridUI(){
+  $('iPpk').value=S.ppk.toFixed(2);$('iKm').value=S.km;
+  const d=S.km*S.ppk;
+  $('gridInfo').textContent=`格距 ${d.toFixed(1)} 像素；格線寬約 ${(S.cols*S.km).toFixed(0)} 公里、高約 ${(S.rows*S.km*ROW_K).toFixed(1)} 公里。`+(S.W?`（圖寬 ${S.W} 像素 ≈ ${(S.W/S.ppk).toFixed(1)} 公里）`:'');
+}
+function gridCenterPt(){const d=S.km*S.ppk;return [S.ox+d*(S.cols-.5)/2,S.oy+d*ROW_K*(S.rows-1)/2];}
+function setPpk(np){const [cx,cy]=gridCenterPt();S.ppk=np;const d=S.km*S.ppk;S.ox=cx-d*(S.cols-.5)/2;S.oy=cy-d*ROW_K*(S.rows-1)/2;syncGridUI();}
+function centerGrid(){const d=S.km*S.ppk;const cx=S.W?S.W/2:0,cy=S.H?S.H/2:0;S.ox=cx-d*(S.cols-.5)/2;S.oy=cy-d*ROW_K*(S.rows-1)/2;syncGridUI();}
+function resizeGrid(nc,nr){
+  nc=Math.max(2,Math.min(120,nc|0));nr=Math.max(2,Math.min(120,nr|0));if(nc===S.cols&&nr===S.rows)return;
+  pushHist();const [cx,cy]=gridCenterPt();const old=S.cells,oc=S.cols,or=S.rows;
+  S.cols=nc;S.rows=nr;newCells();
+  for(let r=0;r<Math.min(or,nr);r++)for(let c=0;c<Math.min(oc,nc);c++)S.cells[r*nc+c]=old[r*oc+c];
+  for(const k in S.spawn){const ns=new Set();for(const i of S.spawn[k]){const c=i%oc,r=(i/oc)|0;if(c<nc&&r<nr)ns.add(r*nc+c);}S.spawn[k]=ns;}
+  const d=S.km*S.ppk;S.ox=cx-d*(S.cols-.5)/2;S.oy=cy-d*ROW_K*(S.rows-1)/2;
+  $('iCols').value=nc;$('iRows').value=nr;syncGridUI();afterEdit();
+}
+
+/* ───────── 出生區 ───────── */
+function autoSpawn(){
+  pushHist();const band=+$('iBand').value||8,inf=+$('iInf').value||13;
+  for(const k in S.spawn)S.spawn[k].clear();
+  const veh=t=>t==='GRASSLAND'||t==='TOWN',ifn=t=>veh(t)||t==='FOREST';
+  for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){
+    const i=r*S.cols+c,t=S.cells[i].t;
+    if(r<band&&veh(t))S.spawn.BLUE.add(i);
+    if(r>=S.rows-band&&veh(t))S.spawn.RED.add(i);
+    if(r<inf&&ifn(t))S.spawn.BLUE_INFANTRY.add(i);
+    if(r>=S.rows-inf&&ifn(t))S.spawn.RED_INFANTRY.add(i);
+  }
+  afterEdit();toast('已產生出生區');
+}
+
+/* ───────── 匯出 ───────── */
+function buildJSON(){
+  const cells={};
+  for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){
+    const q=c-(r>>1),cl=S.cells[r*S.cols+c],o={q,r,terrain:cl.t};
+    if(cl.o)o.overlay=cl.o;if(cl.t==='TOWN')o.popularity=50;cells[q+','+r]=o;
+  }
+  const sp={};
+  for(const k of ['BLUE','RED','BLUE_INFANTRY','RED_INFANTRY']){
+    sp[k]=[...S.spawn[k]].sort((a,b)=>a-b).map(i=>{const c=i%S.cols,r=(i/S.cols)|0;return {q:c-(r>>1),r};});
+  }
+  return {cells,spawn:sp,dims:{w:S.cols,h:S.rows}};
+}
+function updStats(){
+  const cnt={};let rd=0,br=0;for(const c of S.cells){cnt[c.t]=(cnt[c.t]||0)+1;if(c.o==='ROAD')rd++;if(c.o==='BRIDGE')br++;}
+  const tot=S.cells.length;
+  $('stats').innerHTML=`共 ${tot} 格：`+Object.keys(TER).map(k=>`${TER[k].n} ${cnt[k]||0}（${Math.round((cnt[k]||0)/tot*100)}%）`).join('、')+`；道路 ${rd}、橋 ${br}<br>出生區：藍車 ${S.spawn.BLUE.size}、紅車 ${S.spawn.RED.size}、藍步 ${S.spawn.BLUE_INFANTRY.size}、紅步 ${S.spawn.RED_INFANTRY.size}`;
+  const w=[];
+  if(!S.spawn.BLUE.size||!S.spawn.RED.size)w.push('⚠ 還沒有雙方的車輛出生區（可到「④ 編輯」自動產生）');
+  if(!S.spawn.BLUE_INFANTRY.size||!S.spawn.RED_INFANTRY.size)w.push('⚠ 步兵出生區是空的，遊戲會退回一般範圍＋額外深度');
+  let bad=0;for(const k of ['BLUE','RED','BLUE_INFANTRY','RED_INFANTRY'])for(const i of S.spawn[k])if(S.cells[i].t==='WATER'||S.cells[i].t==='MOUNTAIN')bad++;
+  if(bad)w.push(`⚠ 有 ${bad} 個出生格在水域或山地上`);
+  if((cnt.WATER||0)/tot>.7)w.push('⚠ 水域超過 70%，請確認分類結果');
+  if(!(cnt.TOWN))w.push('提示：沒有任何城鎮格（城鎮是占領與補給的重要目標）');
+  $('warns').innerHTML=w.join('<br>');
+}
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function fname(ext){return ($('iName').value||'my_map').replace(/[^\w一-龥-]+/g,'_')+ext;}
+function previewPng(){
+  const W=1600,d=W/(S.cols+.5),sz=d/SQ3,H=Math.ceil(d*ROW_K*(S.rows-1)+2*sz+60);
+  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);
+  const hp=(px,py)=>{x.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k+30);const X=px+sz*Math.cos(a),Y=py+sz*Math.sin(a);k?x.lineTo(X,Y):x.moveTo(X,Y);}x.closePath();};
+  const pos=(cc,rr)=>[d*(cc+((rr&1)?.5:0))+d/2,sz+d*ROW_K*rr+4];
+  for(let r=0;r<S.rows;r++)for(let cc=0;cc<S.cols;cc++){const [px,py]=pos(cc,r),cl=S.cells[r*S.cols+cc];x.fillStyle=TER[cl.t].c;hp(px,py);x.fill();x.strokeStyle='rgba(0,0,0,.25)';x.stroke();}
+  for(let r=0;r<S.rows;r++)for(let cc=0;cc<S.cols;cc++){const cl=S.cells[r*S.cols+cc];if(!cl.o)continue;const [px,py]=pos(cc,r);x.fillStyle=cl.o==='BRIDGE'?'#fff2cc':'#ffb020';x.strokeStyle='#000';x.beginPath();x.arc(px,py,d*.12,0,7);x.fill();x.stroke();}
+  for(const k in S.spawn){x.fillStyle=GRP[k].c;x.strokeStyle=GRP[k].c;for(const i of S.spawn[k]){const [px,py]=pos(i%S.cols,(i/S.cols)|0);if(GRP[k].inf){x.beginPath();x.arc(px,py,d*.3,0,7);x.stroke();}else{x.beginPath();x.arc(px,py,d*.09,0,7);x.fill();}}}
+  x.fillStyle='#000';x.font='16px sans-serif';let lx=10;for(const k in TER){x.fillStyle=TER[k].c;x.fillRect(lx,H-30,16,16);x.fillStyle='#000';x.fillText(TER[k].n,lx+20,H-17);lx+=90;}
+  c.toBlob(b=>dl(b,fname('_preview.png')));
+}
+function importJSON(txt){
+  let j;try{j=JSON.parse(txt);}catch(e){toast('JSON 格式錯誤');return;}
+  const cells=j.cells||j;const keys=Object.keys(cells);if(!keys.length){toast('找不到 cells');return;}
+  let maxR=0,maxC=0;for(const k of keys){const o=cells[k];maxR=Math.max(maxR,o.r);maxC=Math.max(maxC,o.q+(o.r>>1));}
+  const cols=j.dims?j.dims.w:maxC+1,rows=j.dims?j.dims.h:maxR+1;
+  pushHist();S.cols=cols;S.rows=rows;newCells();
+  for(const k of keys){const o=cells[k],c=o.q+(o.r>>1);if(c<0||c>=cols||o.r<0||o.r>=rows)continue;const cl=S.cells[o.r*cols+c];cl.t=TER[o.terrain]?o.terrain:'GRASSLAND';cl.o=o.overlay==='ROAD'||o.overlay==='BRIDGE'?o.overlay:null;fixCell(cl);}
+  for(const k in S.spawn){S.spawn[k]=new Set();for(const p of (j.spawn&&j.spawn[k])||[]){const c=p.q+(p.r>>1);if(c>=0&&c<cols&&p.r>=0&&p.r<rows)S.spawn[k].add(p.r*cols+c);}}
+  $('iCols').value=cols;$('iRows').value=rows;
+  if(!S.W){autoScaleVirtual();}
+  syncGridUI();fitView();afterEdit();toast(`已匯入 ${cols}×${rows}`);
+}
+function autoScaleVirtual(){S.ppk=25;S.ox=0;S.oy=0;}
+
+/* ───────── 儲存 / 還原 ───────── */
+let svT=null;
+function saveLS(){clearTimeout(svT);svT=setTimeout(()=>{try{
+  localStorage.setItem('hexshot1',JSON.stringify({cols:S.cols,rows:S.rows,km:S.km,ppk:S.ppk,ox:S.ox,oy:S.oy,W:S.W,
+    cells:S.cells.map(c=>c.t[0]+(c.t==='MOUNTAIN'?'M':'')+(c.o?(c.o==='BRIDGE'?'b':'r'):'')).join(','),
+    spawn:Object.fromEntries(Object.keys(S.spawn).map(k=>[k,[...S.spawn[k]]])),taught:S.taught,P:S.P,tol:S.tol,name:$('iName').value}));}catch(e){}},400);}
+function loadLS(){
+  try{
+    const j=JSON.parse(localStorage.getItem('hexshot1')||'null');if(!j)return false;S.savedW=j.W;
+    S.cols=j.cols;S.rows=j.rows;S.km=j.km;S.ppk=j.ppk;S.ox=j.ox;S.oy=j.oy;
+    const M={G:'GRASSLAND',F:'FOREST',W:'WATER',T:'TOWN'};
+    S.cells=j.cells.split(',').map(s=>{let t=M[s[0]];let rest=s.slice(1);if(s[0]==='M'){t='MOUNTAIN';}if(s[0]==='G'&&rest[0]==='M'){}
+      const o=s.endsWith('b')?'BRIDGE':s.endsWith('r')?'ROAD':null;return {t:t||'GRASSLAND',o};});
+    if(S.cells.length!==S.cols*S.rows)return false;
+    for(const k in S.spawn)S.spawn[k]=new Set(j.spawn[k]||[]);
+    S.taught=j.taught||[];Object.assign(S.P,j.P||{});S.tol=j.tol||16;if(j.name)$('iName').value=j.name;
+    return true;
+  }catch(e){return false;}
+}
+
+/* ───────── UI ───────── */
+function setMode(m){S.mode=m;document.querySelectorAll('#tb1 [data-m]').forEach(b=>b.classList.toggle('on',b.dataset.m===m));if(m==='M')maskCv=null;draw();}
+function setTool(t){S.tool=t;document.querySelectorAll('#tb2 [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  $('bCalib').classList.toggle('on',t==='calib');$('bPick').classList.toggle('on',t==='pick');
+  const H={pan:'單指拖曳平移，雙指縮放',grid:'拖曳整個格線對準底圖',paint:'點或拖曳來塗地形／道路（到「④ 編輯」選筆刷）',fill:'點一格，把相連同地形整片換成目前選的地形',spawn:'塗出生區（到「④ 編輯」選哪一組）',info:'點一格查看判斷數據',calib:'點比例尺的兩端',pick:'點圖上要教的顏色'};
+  msg(H[t]||'');}
+function showTab(p){const was=document.querySelector('#tabs .on').dataset.p;if(was===p&&p!=='img'||(was===p&&p==='img'))$('panel').classList.toggle('hide');else $('panel').classList.remove('hide');document.querySelectorAll('#tabs [data-p]').forEach(b=>b.classList.toggle('on',b.dataset.p===p));document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('on',e.id==='p-'+p));
+  if(p==='grid'&&S.tool!=='calib')setTool('grid');
+  if(p==='edit'&&(S.tool==='grid'||S.tool==='pan'||S.tool==='calib'||S.tool==='pick'||S.tool==='info'))setTool('paint');
+  if(p==='cls'&&(S.tool==='grid'||S.tool==='calib'))setTool('info');
+  if(p==='exp')updStats();
+  resizeSoon();}
+let rzT;function resizeSoon(){clearTimeout(rzT);rzT=setTimeout(resize,60);}
+function buildPalette(){
+  const pt=$('palT'),po=$('palO'),ps=$('palS');
+  for(const k in TER){const b=document.createElement('button');b.dataset.b=k;b.className='chip';b.innerHTML=`<i style="background:${TER[k].c}"></i>${TER[k].n}`;b.onclick=()=>{S.brush=k;if(S.tool!=='fill')setTool('paint');syncPal();};pt.appendChild(b);}
+  [['ROAD','道路／橋'],['CLR','清除道路']].forEach(([k,n])=>{const b=document.createElement('button');b.dataset.b=k;b.className='chip';b.innerHTML=`<i style="background:${k==='ROAD'?'#ffb020':'#444'}"></i>${n}`;b.onclick=()=>{S.brush=k;setTool('paint');syncPal();};po.appendChild(b);});
+  for(const k in GRP){const b=document.createElement('button');b.dataset.g=k;b.className='chip';b.innerHTML=`<i style="background:${GRP[k].c}"></i>${GRP[k].n}`;b.onclick=()=>{S.grp=k;setTool('spawn');syncPal();};ps.appendChild(b);}
+  const e=document.createElement('button');e.dataset.g='ERASE';e.textContent='擦除出生區';e.onclick=()=>{S.grp='ERASE';setTool('spawn');syncPal();};ps.appendChild(e);
+}
+function syncPal(){document.querySelectorAll('#palT [data-b],#palO [data-b]').forEach(b=>b.classList.toggle('on',b.dataset.b===S.brush));document.querySelectorAll('#palS [data-g]').forEach(b=>b.classList.toggle('on',b.dataset.g===S.grp&&S.tool==='spawn'));}
+function buildSliders(){
+  const box=$('sliders');box.innerHTML='';
+  for(const [k,n,mn,mx,st] of PCFG){
+    const row=document.createElement('div');row.className='sl';
+    row.innerHTML=`<span>${n}</span><input type="range" min="${mn}" max="${mx}" step="${st}" value="${S.P[k]}"><span>${(+S.P[k]).toFixed(2)}</span>`;
+    const inp=row.children[1],lab=row.children[2];inp.oninput=()=>{S.P[k]=+inp.value;lab.textContent=(+inp.value).toFixed(2);saveLS();};
+    box.appendChild(row);
+  }
+}
+
+function bind(){
+  document.querySelectorAll('#tb1 [data-m]').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+  document.querySelectorAll('#tb2 [data-t]').forEach(b=>b.onclick=()=>setTool(b.dataset.t));
+  document.querySelectorAll('#tabs [data-p]').forEach(b=>b.onclick=()=>showTab(b.dataset.p));
+  $('bGrid').onclick=e=>{S.showGrid=!S.showGrid;e.target.classList.toggle('on',S.showGrid);draw();};
+  $('bFill').onclick=e=>{S.showFill=!S.showFill;e.target.classList.toggle('on',S.showFill);draw();};
+  $('bCoord').onclick=e=>{S.showCoord=!S.showCoord;e.target.classList.toggle('on',S.showCoord);draw();};
+  $('fa').oninput=e=>{S.fillA=+e.target.value;draw();};
+  $('bFit').onclick=fitView;
+  $('bUndo').onclick=undo;$('bRedo').onclick=redoF;
+  $('fN').onchange=e=>loadImg(e.target.files[0],'N');$('fS').onchange=e=>loadImg(e.target.files[0],'S');
+  $('iCols').onchange=()=>resizeGrid(+$('iCols').value,S.rows);$('iRows').onchange=()=>resizeGrid(S.cols,+$('iRows').value);
+  $('iKm').onchange=()=>{const k=Math.max(.1,+$('iKm').value||1);const [cx,cy]=gridCenterPt();const ppkReal=S.ppk;S.km=k;const d=S.km*S.ppk;S.ox=cx-d*(S.cols-.5)/2;S.oy=cy-d*ROW_K*(S.rows-1)/2;syncGridUI();draw();saveLS();};
+  $('iPpk').onchange=()=>{const v=+$('iPpk').value;if(v>0){setPpk(v);draw();saveLS();}};
+  $('bWidthKm').onclick=()=>{const k=+$('iWidthKm').value;if(!(k>0)||!S.W){toast('請先載入圖片並輸入公里數');return;}setPpk(S.W/k);draw();saveLS();};
+  $('bCenter').onclick=()=>{centerGrid();draw();saveLS();};
+  document.querySelectorAll('[data-nudge]').forEach(b=>b.onclick=()=>{const [a,c]=b.dataset.nudge.split(',').map(Number);S.ox+=a*2;S.oy+=c*2;draw();saveLS();});
+  document.querySelectorAll('[data-scale]').forEach(b=>b.onclick=()=>{setPpk(S.ppk*+b.dataset.scale);draw();saveLS();});
+  $('bCalib').onclick=()=>{if(S.tool==='calib'){setTool('grid');return;}S.cal={p1:null,p2:null};$('calRow').style.display='none';setTool('calib');draw();};
+  $('calApply').onclick=()=>{const px=+$('calPx').textContent,km=+$('calKm').value;if(px>0&&km>0){setPpk(px/km);S.cal={p1:null,p2:null};$('calRow').style.display='none';setTool('grid');draw();saveLS();toast(`已校準：每公里 ${S.ppk.toFixed(2)} 像素`);}};
+  $('bFetch').onclick=fetchBase;
+  $('bAuto').onclick=autoClassify;
+  $('cUseN').onchange=e=>S.useN=e.target.checked;$('cUseS').onchange=e=>S.useS=e.target.checked;$('cMtn').onchange=e=>S.useMtn=e.target.checked;
+  $('bResetP').onclick=()=>{S.P=Object.assign({},DEFP);buildSliders();saveLS();};
+  $('bPick').onclick=()=>{setTool(S.tool==='pick'?'info':'pick');};
+  document.querySelectorAll('#pkBtns [data-k]').forEach(b=>b.onclick=()=>{if(!S.pick)return;S.taught.push({...S.pick,k:+b.dataset.k});S.pick=null;$('pkBtns').style.display='none';$('pkTx').textContent='已加入';maskCv=null;renderTaught();draw();saveLS();});
+  $('iTol').onchange=e=>{S.tol=+e.target.value||16;maskCv=null;draw();saveLS();};
+  document.querySelectorAll('[data-br]').forEach(b=>b.onclick=()=>{S.brushR=+b.dataset.br;document.querySelectorAll('[data-br]').forEach(x=>x.classList.toggle('on',x===b));});
+  $('bAutoSpawn').onclick=autoSpawn;
+  $('bClrSpawn').onclick=()=>{pushHist();for(const k in S.spawn)S.spawn[k].clear();afterEdit();};
+  $('cShowSp').onchange=e=>{S.showSp=e.target.checked;draw();};
+  $('bDl').onclick=()=>{dl(new Blob([JSON.stringify(buildJSON())],{type:'application/json'}),fname('.json'));toast('已下載');};
+  $('bCopy').onclick=async()=>{const t=JSON.stringify(buildJSON());const ta=$('jsonOut');ta.value=t;ta.style.display='block';try{await navigator.clipboard.writeText(t);toast('已複製到剪貼簿');}catch(e){ta.select();toast('請長按文字全選後複製');}};
+  $('bPng').onclick=previewPng;
+  $('fJ').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>importJSON(rd.result);rd.readAsText(f);};
+  $('bReset').onclick=()=>{if(!confirm('確定清空所有編輯？（圖片不會被移除）'))return;pushHist();newCells();for(const k in S.spawn)S.spawn[k].clear();afterEdit();};
+  window.addEventListener('resize',resizeSoon);
+  if('ResizeObserver' in window)new ResizeObserver(resizeSoon).observe($('cvw'));
+}
+
+
+/* ───────── 座標抓圖（OpenStreetMap + Esri） ───────── */
+function parseLL(t){
+  t=(t||'').trim();if(!t)return null;
+  const toDeg=(m)=>{let v=parseFloat(m[1])+(m[2]?parseFloat(m[2])/60:0)+(m[3]?parseFloat(m[3])/3600:0);if(m[4]&&/[SW]/i.test(m[4]))v=-v;return v;};
+  let a=[];
+  if(/[°º]/.test(t)){
+    const re=/(-?\d+(?:\.\d+)?)\s*[°º]\s*(?:(\d+(?:\.\d+)?)\s*['′’]\s*)?(?:(\d+(?:\.\d+)?)\s*["″”]\s*)?([NSEWnsew])?/g;let m;
+    while((m=re.exec(t)))a.push({v:toDeg(m),d:m[4]?m[4].toUpperCase():''});
+    if(a.length<2)return null;
+    let lat=a[0].v,lon=a[1].v;if(/[EW]/.test(a[0].d)||/[NS]/.test(a[1].d)){lat=a[1].v;lon=a[0].v;}
+    return ok(lat,lon);
+  }
+  const nums=t.match(/-?\d+(?:\.\d+)?/g);if(!nums||nums.length<2)return null;
+  return ok(parseFloat(nums[0]),parseFloat(nums[1]));
+  function ok(la,lo){return (isFinite(la)&&isFinite(lo)&&Math.abs(la)<=80&&Math.abs(lo)<=180)?[la,lo]:null;}
+}
+function ll2px(lat,lon,z){const n=256*Math.pow(2,z),sn=Math.sin(lat*Math.PI/180);return [(lon+180)/360*n,(0.5-Math.log((1+sn)/(1-sn))/(4*Math.PI))*n];}
+const TILE_SRC={
+  N:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+  S:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+};
+function loadTile(url){return new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';const t=setTimeout(()=>res(null),25000);im.onload=()=>{clearTimeout(t);res(im);};im.onerror=()=>{clearTimeout(t);res(null);};im.src=url;});}
+async function pool(items,n,fn){let i=0;const w=Array.from({length:n},async()=>{while(i<items.length){const k=i++;await fn(items[k]);}});await Promise.all(w);}
+function canvasToImg(c){return new Promise((res,rej)=>{try{c.toBlob(b=>{if(!b){rej(new Error('toBlob'));return;}const u=URL.createObjectURL(b),im=new Image();im.onload=()=>{res(im);};im.onerror=()=>rej(new Error('img'));im.src=u;});}catch(e){rej(e);}});}
+async function fetchBase(){
+  const ll=parseLL($('iLL').value);
+  if(!ll){toast('座標看不懂，例如 24.7432, 121.7503');return;}
+  const [lat,lon]=ll,km=S.km;
+  const halfW=(S.cols+.5)*km/2+.5,halfH=((S.rows-1)*ROW_K+1.1547)*km/2+.5;
+  const cosl=Math.cos(lat*Math.PI/180);
+  let z=Math.round(Math.log2(156543.03392*cosl/(1000/29)))+(+$('sZoom').value||0);z=Math.max(8,Math.min(16,z));
+  const ppk=1000/(156543.03392*cosl/Math.pow(2,z));
+  const W=Math.ceil(2*halfW*ppk),H=Math.ceil(2*halfH*ppk);
+  if(W>4200||H>4200){toast('範圍太大，請降低清晰度或縮小格數');return;}
+  const [cx,cy]=ll2px(lat,lon,z),left=cx-W/2,top=cy-H/2,nT=Math.pow(2,z);
+  const tx0=Math.floor(left/256),tx1=Math.floor((left+W-1)/256),ty0=Math.max(0,Math.floor(top/256)),ty1=Math.min(nT-1,Math.floor((top+H-1)/256));
+  const jobs=[];for(const L of ['N','S'])for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++)jobs.push({L,tx,ty});
+  const cvs={},fail={N:0,S:0},tot={N:0,S:0};
+  for(const L of ['N','S']){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#808080';x.fillRect(0,0,W,H);cvs[L]=c;}
+  $('bFetch').disabled=true;let done=0;
+  $('fetchInfo').textContent=`抓取中… 0/${jobs.length}（z${z}，約 ${(2*halfW).toFixed(0)}×${(2*halfH).toFixed(0)} 公里）`;
+  await pool(jobs,8,async j=>{
+    const xx=((j.tx%nT)+nT)%nT;const im=await loadTile(TILE_SRC[j.L](z,xx,j.ty));tot[j.L]++;
+    if(im)cvs[j.L].getContext('2d').drawImage(im,j.tx*256-left,j.ty*256-top);else fail[j.L]++;
+    done++;if(done%4===0||done===jobs.length)$('fetchInfo').textContent=`抓取中… ${done}/${jobs.length}`;
+  });
+  $('bFetch').disabled=false;
+  const okN=tot.N&&fail.N/tot.N<.25,okS=tot.S&&fail.S/tot.S<.25;
+  if(!okN&&!okS){$('fetchInfo').innerHTML='<span class="warn">兩種底圖都抓不到（網路或瀏覽器擋住）。請改用方法 B 上傳截圖，或稍後再試。</span>';return;}
+  let imN=null,imS=null;
+  try{if(okN)imN=await canvasToImg(cvs.N);if(okS)imS=await canvasToImg(cvs.S);}
+  catch(e){$('fetchInfo').innerHTML='<span class="warn">瀏覽器不允許讀取圖磚（跨網域限制）。請改用方法 B。</span>';return;}
+  S.N=imN;S.S=imS;S.W=W;S.H=H;S.ppk=ppk;S.savedW=null;
+  centerGrid();buildAnalysis();fitView();updImgInfo();
+  setMode(imN&&imS?'SPLIT':(imN?'N':'S'));
+  $('attr').style.display='block';
+  try{localStorage.setItem('hexshot_ll',$('iLL').value);}catch(e){}
+  let w='';if(!okN)w+=' 一般地圖沒抓成功，只有衛星。';if(!okS)w+=' 衛星沒抓成功，只有一般地圖。';
+  if(okN&&fail.N)w+=` 一般圖有 ${fail.N} 張圖磚缺漏。`;if(okS&&fail.S)w+=` 衛星有 ${fail.S} 張圖磚缺漏。`;
+  $('fetchInfo').innerHTML=`完成：z${z}，每公里 ${ppk.toFixed(1)} 像素，格線已對準中心。`+(w?`<span class="warn">${w}</span>`:'');
+  toast('底圖完成，可以按「③ 分類」');
+}
+
+/* ───────── 啟動 ───────── */
+(function init(){
+  newCells();buildPalette();buildSliders();bind();
+  const had=loadLS();
+  if(!had){newCells();S.ppk=25;}
+  $('iCols').value=S.cols;$('iRows').value=S.rows;
+  renderTaught();syncGridUI();syncPal();updUndo();setMode('N');setTool('pan');
+  document.querySelector('[data-br="0"]').classList.add('on');
+  resize();fitView();updStats();
+  if(had)toast('已還原上次的編輯（圖片需重新載入）');
+  try{const q=localStorage.getItem('hexshot_ll');if(q)$('iLL').value=q;}catch(e){}
+  window.HX={fetchBase,parseLL,ll2px,dbg:()=>({p:ptrs.size,act:act&&act.k,pinch:!!pinch}),S,decide,cellStats,classPx,autoClassify,buildJSON,importJSON,get AN(){return AN;}};
+})();
+</script>
+</body>
+</html>
